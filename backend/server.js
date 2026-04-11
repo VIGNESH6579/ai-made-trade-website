@@ -104,6 +104,9 @@ app.get('/api/signals', async (req, res) => {
     try {
         const rawData = await getOptionChain(symbol);
         const processedSignal = calculateSignal(rawData);
+        if (processedSignal.error) {
+            return res.status(500).json({ error: "Failed to map NSE Data. They might be blocking the IP." });
+        }
         cache.set(cacheKey, processedSignal);
         return res.json({ source: 'live', data: processedSignal });
     } catch (error) {

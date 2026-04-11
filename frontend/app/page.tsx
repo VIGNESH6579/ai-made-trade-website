@@ -22,6 +22,7 @@ export default function Home() {
       
       const payload = await res.json();
       if (payload.error) throw new Error(payload.error);
+      if (payload.data && payload.data.error) throw new Error(payload.data.error);
       
       setData(payload.data);
       setLastUpdated(new Date().toLocaleTimeString());
