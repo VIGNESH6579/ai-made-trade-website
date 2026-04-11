@@ -14,27 +14,11 @@ const cache = new NodeCache({ stdTTL: 0 }); // Fallback cache
 const NTFY_TOPIC = "aimade_trade_nifty50_alerts";
 let lastSignalAction = "HOLD / NEUTRAL";
 
-// New API Route for the React Frontend Login Modal
-app.post('/api/angel/auth', async (req, res) => {
-    const { clientId, password, totp, apiKey } = req.body;
-    
-    if (!clientId || !password || !totp || !apiKey) {
-        return res.status(400).json({ error: "Missing required login fields." });
-    }
-
-    const authResult = await authenticateAngel(clientId, password, totp, apiKey);
-    
-    if (authResult.success) {
-        return res.json({ message: "Successfully connected to Angel One API Engine." });
-    } else {
-        return res.status(401).json({ error: authResult.error || "Authentication failed with Angel One." });
-    }
-});
+// Total Automation: Authentication is now handled 100% internally by the Engine using Node Environment Variables.
 
 // Auto-Polling Logic
 const autoPollMarket = async () => {
-    // Only run if user has authenticated through the frontend
-    if (!angelAuth.jwtToken) return;
+    // Engine is now fully autonomous. It will force its own auth if missing.
 
     try {
         const rawData = await fetchAngelOptionChain(); // Hits Angel One API
@@ -61,11 +45,7 @@ const autoPollMarket = async () => {
 
 app.get('/api/signals', async (req, res) => {
     const cacheKey = `signal_NIFTY`;
-    
-    // Safety check if user hasn't logged in yet
-    if (!angelAuth.jwtToken) {
-        return res.status(403).json({ error: "Angel One API disconnected. Please login via Dashboard to start the engine." });
-    }
+    // Autonomy unlocked
 
     const cachedData = cache.get(cacheKey);
     if (cachedData) {

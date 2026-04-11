@@ -1,12 +1,10 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import SignalCard from '../components/SignalCard';
 import OptionChain from '../components/OptionChain';
 import { RefreshCw } from 'lucide-react';
 
 export default function Home() {
-  const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -20,12 +18,6 @@ export default function Home() {
       const res = await fetch(`${apiUrl}/api/signals?symbol=NIFTY`);
       
       const payload = await res.json();
-      
-      // Specifically handle the Angel One disconnected state to force a login
-      if (res.status === 403 || (payload.error && payload.error.includes('Angel One API disconnected'))) {
-          router.push('/login');
-          return;
-      }
       
       if (!res.ok) throw new Error('Failed to fetch from backend');
       if (payload.error) throw new Error(payload.error);
