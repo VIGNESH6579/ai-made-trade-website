@@ -1,66 +1,44 @@
 const express = require('express');
-const axios = require('axios');
 const cors = require('cors');
 const NodeCache = require('node-cache');
+const axios = require('axios');
 const { calculateSignal } = require('./engine');
+const { authenticateAngel, fetchAngelOptionChain, angelAuth } = require('./angelAPI');
 
 const app = express();
 app.use(cors());
+app.use(express.json()); // For parsing application/json POST requests
 
 const port = process.env.PORT || 5000;
-// We set stdTTL to 0 (never expires) so we always have a fallback when NSE blocks the IP
-const cache = new NodeCache({ stdTTL: 0 }); 
-
-let cookies = "";
-let lastSignalAction = "HOLD / NEUTRAL"; 
-
+const cache = new NodeCache({ stdTTL: 0 }); // Fallback cache
 const NTFY_TOPIC = "aimade_trade_nifty50_alerts";
+let lastSignalAction = "HOLD / NEUTRAL";
 
-const headers = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Connection': 'keep-alive',
-};
-
-const fetchCookies = async () => {
-    try {
-        const response = await axios.get("https://www.nseindia.com", { headers });
-        const setCookieHeaders = response.headers['set-cookie'];
-        if (setCookieHeaders) {
-            cookies = setCookieHeaders.map(cookie => cookie.split(';')[0]).join('; ');
-            console.log("Cookies fetched successfully");
-        }
-    } catch (error) {
-        console.error("Error fetching cookies, will retry later.");
-    }
-};
-
-const getOptionChain = async (symbol = 'NIFTY') => {
-    if (!cookies) await fetchCookies();
+// New API Route for the React Frontend Login Modal
+app.post('/api/angel/auth', async (req, res) => {
+    const { clientId, password, totp, apiKey } = req.body;
     
-    try {
-        const response = await axios.get(`https://www.nseindia.com/api/option-chain-indices?symbol=${symbol}`, {
-            headers: { ...headers, 'Cookie': cookies }
-        });
-        return response.data;
-    } catch (error) {
-        if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-            await fetchCookies();
-            const retryResponse = await axios.get(`https://www.nseindia.com/api/option-chain-indices?symbol=${symbol}`, {
-                headers: { ...headers, 'Cookie': cookies }
-            });
-            return retryResponse.data;
-        }
-        throw error;
+    if (!clientId || !password || !totp || !apiKey) {
+        return res.status(400).json({ error: "Missing required login fields." });
     }
-};
 
+    const authResult = await authenticateAngel(clientId, password, totp, apiKey);
+    
+    if (authResult.success) {
+        return res.json({ message: "Successfully connected to Angel One API Engine." });
+    } else {
+        return res.status(401).json({ error: authResult.error || "Authentication failed with Angel One." });
+    }
+});
+
+// Auto-Polling Logic
 const autoPollMarket = async () => {
+    // Only run if user has authenticated through the frontend
+    if (!angelAuth.jwtToken) return;
+
     try {
-        const rawData = await getOptionChain('NIFTY');
-        const processedSignal = calculateSignal(rawData);
+        const rawData = await fetchAngelOptionChain(); // Hits Angel One API
+        const processedSignal = calculateSignal(rawData); // Our Quant Engine
         
         if (!processedSignal.error) {
             const currentAction = processedSignal.signal.action;
@@ -69,12 +47,10 @@ const autoPollMarket = async () => {
                 await axios.post(`https://ntfy.sh/${NTFY_TOPIC}`, message, { headers: { 'Title': `NIFTY Alert - ${currentAction}`, 'Priority': 'urgent' }});
             }
             lastSignalAction = currentAction;
-            // Update cache with fresh data & timestamp
             cache.set('signal_NIFTY', { ...processedSignal, isStale: false });
         }
     } catch (error) {
-        console.error("Auto-poll blocked by NSE. Relying on cache.");
-        // Mark existing cache as stale if it exists
+        console.error("Auto-poll failed:", error.message);
         const existingData = cache.get('signal_NIFTY');
         if (existingData) {
             existingData.isStale = true;
@@ -84,8 +60,12 @@ const autoPollMarket = async () => {
 };
 
 app.get('/api/signals', async (req, res) => {
-    const symbol = req.query.symbol || 'NIFTY';
-    const cacheKey = `signal_${symbol}`;
+    const cacheKey = `signal_NIFTY`;
+    
+    // Safety check if user hasn't logged in yet
+    if (!angelAuth.jwtToken) {
+        return res.status(403).json({ error: "Angel One API disconnected. Please login via Dashboard to start the engine." });
+    }
 
     const cachedData = cache.get(cacheKey);
     if (cachedData) {
@@ -93,11 +73,11 @@ app.get('/api/signals', async (req, res) => {
     }
 
     try {
-        const rawData = await getOptionChain(symbol);
+        const rawData = await fetchAngelOptionChain();
         const processedSignal = calculateSignal(rawData);
         
         if (processedSignal.error) {
-            throw new Error("Invalid format");
+            throw new Error("Invalid format returned from Angel mapping");
         }
         
         const responseData = { ...processedSignal, isStale: false };
@@ -105,12 +85,16 @@ app.get('/api/signals', async (req, res) => {
         return res.json({ source: 'live', data: responseData });
 
     } catch (error) {
-        return res.status(500).json({ error: "Waiting for NSE connection. The datacentre IP is temporarily rate-limited. Please wait 3 minutes." });
+        const fallback = cache.get(cacheKey);
+        if (fallback) {
+            return res.json({ source: 'cache_stale', data: { ...fallback, isStale: true } });
+        }
+        return res.status(500).json({ error: error.message || "Failed to establish real-time connection with Angel One." });
     }
 });
 
 app.listen(port, () => {
-    console.log(`Backend running on port ${port}`);
-    fetchCookies();
+    console.log(`Angel One Connected Backend running on port ${port}`);
+    // Start background auto-polling every 3 minutes
     setInterval(autoPollMarket, 180000); 
 });
