@@ -1,6 +1,6 @@
 const axios = require('axios');
 const NodeCache = require('node-cache');
-const totp = require('totp-generator'); // Import automatic TOTP generation
+const { authenticator } = require('otplib'); // Stable TOTP generation
 
 const scripCache = new NodeCache({ stdTTL: 43200 }); // 12 hours
 
@@ -24,7 +24,7 @@ const authenticateAngel = async () => {
         }
 
         // Programmatically generate the exact 6-digit TOTP synced with Google Authenticator
-        const computedTotp = totp(secret);
+        const computedTotp = authenticator.generate(secret);
         console.log(`Computed Autonomous TOTP: ${computedTotp}`);
 
         const payload = {
