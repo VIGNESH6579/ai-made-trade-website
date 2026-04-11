@@ -14,9 +14,8 @@ export default function Home() {
     setLoading(true);
     setError(null);
     try {
-      // In production (Vercel), you would map this to the Render backend URL.
-      // For local development it defaults to localhost:5000
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      // Direct connection to the live Render backend
+      const apiUrl = 'https://ai-made-trade-website.onrender.com';
       const res = await fetch(`${apiUrl}/api/signals?symbol=NIFTY`);
       
       if (!res.ok) throw new Error('Failed to fetch from backend');
