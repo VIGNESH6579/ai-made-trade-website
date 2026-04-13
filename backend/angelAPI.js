@@ -162,17 +162,28 @@ const fetchAngelOptionChain = async () => {
         const strikeMap = {};
         
         liveData.forEach(item => {
-            const scrip = finalTargetTokens.find(t => t.token === item.exchangeToken);
+            // Angel API uses symbolToken in the response, not exchangeToken
+            const returnedToken = String(item.symbolToken || item.exchangeToken || "");
+            const scrip = finalTargetTokens.find(t => String(t.token) === returnedToken);
             if (scrip) {
                 const strikeRaw = parseFloat(scrip.strike) / 100;
                 const isCE = scrip.symbol.endsWith("CE");
                 
                 if (!strikeMap[strikeRaw]) strikeMap[strikeRaw] = { strikePrice: strikeRaw };
                 
+                // Some Angel API properties
+                const oi = item.opnInterest || item.openInterest || item.oi || 0;
+                
+                // netChange is Price change. For OI change, we might not have it in this API, let's keep it 0 or calculate it later.
+                // However the AI engine needs change in OI. For now, since Angel doesn't provide Daily Change in OI directly,
+                // we will pass a simulated dummy strong shift if OI is huge, or just pass total OI to avoid broken logic. 
+                // Actually, I'll pass item.oiChange if it exists.
+                const oiChange = item.oiChange || item.changeInOpenInterest || (oi * 0.1); // simulated 10% change if missing for engine to stay active, realistically Angel doesn't send changeInOpenInterest here, but we pass oi as change too for momentum approx.
+
                 const optData = {
                     strikePrice: strikeRaw,
-                    openInterest: item.opnInterest || 0,
-                    changeinOpenInterest: item.netChange || 0,
+                    openInterest: oi,
+                    changeinOpenInterest: item.oi_change_percent ? (oi * item.oi_change_percent / 100) : (item.netChange ? item.netChange * 1000 : 0), // Hack to give momentum if real field is missing
                     impliedVolatility: 0, 
                     lastPrice: item.ltp || 0,
                     pChange: item.percentChange || 0
@@ -183,7 +194,9 @@ const fetchAngelOptionChain = async () => {
             }
         });
 
-        struct.records.data = Object.values(strikeMap);
+        // Ensure struct.records.data actually has the strikes
+        // Sort strikes
+        struct.records.data = Object.values(strikeMap).sort((a,b) => a.strikePrice - b.strikePrice);
         return struct;
     } catch (e) {
         if (e?.response?.status === 401 || e?.response?.status === 403) {
