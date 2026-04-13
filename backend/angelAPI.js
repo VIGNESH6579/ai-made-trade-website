@@ -81,7 +81,7 @@ const getScripAndConfig = async () => {
     const spotPayload = { mode: "LTP", exchangeTokens: { "NSE": [spotToken] } };
     const resSpot = await axios.post("https://apiconnect.angelbroking.com/rest/secure/angelbroking/market/v1/quote", spotPayload, { headers: getHeaders() });
     
-    let spotPrice = 22000; // rough generic fallback
+    let spotPrice = 23750; // Better generic fallback for today
     if (resSpot.data.status && resSpot.data.data.fetched.length > 0) {
         spotPrice = resSpot.data.data.fetched[0].ltp;
     }
@@ -98,31 +98,18 @@ const getScripAndConfig = async () => {
     let parsedDates = uniqueExpiries.map(expStr => {
         try {
             const dayStr = expStr.match(/^\d+/);
-            const monthStr = expStr.match(/[A-Z]+/);
+            const monthStr = expStr.match(/[A-Z]+/i);
             const yearStr = expStr.match(/\d+$/);
             if (!dayStr || !monthStr || !yearStr) return null;
             
             let yearVal = parseInt(yearStr[0]);
             if (yearVal < 100) yearVal += 2000;
-            const dateObj = new Date(yearVal, months[monthStr[0]], parseInt(dayStr[0]));
+            const dateObj = new Date(yearVal, months[monthStr[0].toUpperCase()], parseInt(dayStr[0]));
             return { str: expStr, date: dateObj };
         } catch(e) { return null; }
     }).filter(d => d && d.date >= now).sort((a,b) => a.date - b.date);
 
-    const targetExpiry = parsedDates.length > 0 ? parsedDates[0].str : uniqueExpiries[0];
-
-    // Filter tokens for 10 strikes around spot
-    const baseStrike = Math.round(spotPrice / 50) * 50;
-    const lowerBound = baseStrike - 500;
-    const upperBound = baseStrike + 500;
-
-    const targetTokens = niftyOptions.filter(item => 
-        item.expiry === targetExpiry && 
-        (parseFloat(item.strike) / 100) >= lowerBound && 
-        (parseFloat(item.strike) / 100) <= upperBound
-    );
-
-    return { spotPrice, targetTokens };
+    return { spotPrice, parsedDates, niftyOptions };
 };
 
 const fetchAngelOptionChain = async () => {
@@ -132,25 +119,50 @@ const fetchAngelOptionChain = async () => {
     if (!angelAuth.jwtToken) throw new Error("Angel One Auth Failed internally.");
 
     try {
-        const { spotPrice, targetTokens } = await getScripAndConfig();
+        const { spotPrice, parsedDates, niftyOptions } = await getScripAndConfig();
         
-        const exchangeTokens = {};
-        targetTokens.forEach(t => {
-            if (!exchangeTokens[t.exch_seg]) exchangeTokens[t.exch_seg] = [];
-            exchangeTokens[t.exch_seg].push(t.token);
-        });
+        const baseStrike = Math.round(spotPrice / 50) * 50;
+        const lowerBound = baseStrike - 500;
+        const upperBound = baseStrike + 500;
 
-        const payload = { mode: "FULL", exchangeTokens: exchangeTokens };
-        const res = await axios.post("https://apiconnect.angelbroking.com/rest/secure/angelbroking/market/v1/quote", payload, { headers: getHeaders() });
-        
-        if (!res.data.status) throw new Error(res.data.message);
+        let liveData = [];
+        let finalTargetTokens = [];
 
-        const liveData = res.data.data.fetched;
+        for (let i = 0; i < Math.min(parsedDates.length, 3); i++) {
+            const tempTargetExpiry = parsedDates[i].str;
+            const targetTokens = niftyOptions.filter(item => 
+                item.expiry === tempTargetExpiry && 
+                (parseFloat(item.strike) / 100) >= lowerBound && 
+                (parseFloat(item.strike) / 100) <= upperBound
+            );
+
+            if (targetTokens.length === 0) continue;
+
+            const exchangeTokens = {};
+            targetTokens.forEach(t => {
+                if (!exchangeTokens[t.exch_seg]) exchangeTokens[t.exch_seg] = [];
+                exchangeTokens[t.exch_seg].push(t.token);
+            });
+
+            const payload = { mode: "FULL", exchangeTokens: exchangeTokens };
+            const res = await axios.post("https://apiconnect.angelbroking.com/rest/secure/angelbroking/market/v1/quote", payload, { headers: getHeaders() });
+            
+            if (res.data.status && res.data.data.fetched.length > 0) {
+                liveData = res.data.data.fetched;
+                finalTargetTokens = targetTokens;
+                break; // Found active live data
+            }
+        }
+
+        if (liveData.length === 0) {
+           throw new Error("No live market data found for upcoming expiries. Market might be inactive or tokens failed to fetch.");
+        }
+
         const struct = { records: { underlyingValue: spotPrice, timestamp: new Date().toISOString(), data: [] } };
         const strikeMap = {};
         
         liveData.forEach(item => {
-            const scrip = targetTokens.find(t => t.token === item.exchangeToken);
+            const scrip = finalTargetTokens.find(t => t.token === item.exchangeToken);
             if (scrip) {
                 const strikeRaw = parseFloat(scrip.strike) / 100;
                 const isCE = scrip.symbol.endsWith("CE");
