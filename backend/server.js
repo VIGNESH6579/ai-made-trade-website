@@ -14,6 +14,9 @@ const cache = new NodeCache({ stdTTL: 0 }); // Fallback cache
 const NTFY_TOPIC = "aimade_trade_nifty50_alerts";
 let lastSignalAction = "HOLD / NEUTRAL";
 
+// Health check endpoint to keep Render awake
+app.get('/health', (req, res) => res.status(200).send('OK'));
+
 // Total Automation: Authentication is now handled 100% internally by the Engine using Node Environment Variables.
 
 // Auto-Polling Logic
