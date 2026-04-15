@@ -96,11 +96,11 @@ app.get('/api/signals', async (req, res) => {
 
 const autoPollSequence = async () => {
     await autoPollMarket();
-    setTimeout(autoPollSequence, 10000);
+    setTimeout(autoPollSequence, 30000);
 };
 
 server.listen(port, () => {
     console.log(`Angel One Connected Backend running on port ${port}`);
-    // Fast polling sequentially to guarantee rate limit adherence
+    // Polling sequentially at 30s to respect strict AngelBroking Daily Rate Limits
     autoPollSequence(); 
 });
