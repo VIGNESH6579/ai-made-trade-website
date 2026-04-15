@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import SignalCard from '../components/SignalCard';
 import OptionChain from '../components/OptionChain';
 import { RefreshCw } from 'lucide-react';
@@ -9,33 +9,59 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [wsStatus, setWsStatus] = useState<string>('Connecting...');
 
-  const fetchLiveSignals = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const apiUrl = 'https://ai-made-trade-website.onrender.com';
-      const res = await fetch(`${apiUrl}/api/signals?symbol=NIFTY`);
-      
-      const payload = await res.json();
-      
-      if (!res.ok) throw new Error('Failed to fetch from backend');
-      if (payload.error) throw new Error(payload.error);
-      if (payload.data && payload.data.error) throw new Error(payload.data.error);
-      
-      setData(payload.data);
-      setLastUpdated(new Date().toLocaleTimeString());
-    } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    fetchLiveSignals();
-    const interval = setInterval(fetchLiveSignals, 60000); // Poll every minute
-    return () => clearInterval(interval);
+    const connectWs = () => {
+      // Direct WebSocket stream
+      const wsUrl = 'wss://ai-made-trade-website.onrender.com';
+      wsRef.current = new WebSocket(wsUrl);
+
+      wsRef.current.onopen = () => {
+        setWsStatus('Live Server Connected');
+        setLoading(false);
+        setError(null);
+      };
+
+      wsRef.current.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.error) {
+             setError(payload.error);
+             return;
+          }
+          if (payload.data) {
+             setData(payload.data);
+             setLastUpdated(new Date().toLocaleTimeString());
+             if (payload.source === 'cache_stale') {
+                 setWsStatus('Retrying API...');
+             } else {
+                 setWsStatus('Live Server Connected');
+             }
+          }
+        } catch (e) {
+          console.error("Failed to parse websocket message", e);
+        }
+      };
+
+      wsRef.current.onerror = () => {
+        setWsStatus('Connection Error');
+        setError("WebSocket Connection Error.");
+      };
+
+      wsRef.current.onclose = () => {
+        setWsStatus('Disconnected - Retrying...');
+        setTimeout(connectWs, 3000);
+      };
+    };
+
+    connectWs();
+
+    return () => {
+      if (wsRef.current) wsRef.current.close();
+    };
   }, []);
 
   return (
@@ -46,14 +72,11 @@ export default function Home() {
           {data && <p className="text-2xl font-bold text-gray-200">{data.underlyingValue}</p>}
         </div>
         <div className="text-right">
-          <p className="text-xs text-gray-400 mb-1">Status: {loading ? 'Fetching...' : 'Live'}</p>
-          <button 
-            onClick={fetchLiveSignals}
-            className="flex items-center gap-2 text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-          >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            {lastUpdated ? `Updated ${lastUpdated}` : 'Sync Data'}
-          </button>
+          <p className="text-xs text-gray-400 mb-1">Status: {wsStatus}</p>
+          <div className="flex items-center justify-end gap-2 text-sm text-gray-300 px-4 py-2 opacity-80">
+            <RefreshCw size={16} className={wsStatus !== 'Live Server Connected' ? 'animate-spin' : ''} />
+            {lastUpdated ? `Updated ${lastUpdated}` : 'Syncing Data...'}
+          </div>
         </div>
       </div>
 
@@ -76,7 +99,7 @@ export default function Home() {
       
       {loading && !data && (
         <div className="h-64 flex items-center justify-center border border-gray-800 rounded-xl bg-customPanel/50">
-          <p className="text-gray-500 animate-pulse">Initializing Strategy Engine...</p>
+          <p className="text-gray-500 animate-pulse">Initializing Option Chain WS Engine...</p>
         </div>
       )}
     </div>
