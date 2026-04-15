@@ -64,13 +64,22 @@ const getHeaders = () => ({
     'Authorization': `Bearer ${angelAuth.jwtToken}`
 });
 
+let scripDownloadPromise = null;
 const getScripAndConfig = async () => {
     let scrips = scripCache.get('all_scrips');
     if (!scrips) {
-        console.log("Downloading Angel One Scrip Master...");
-        const res = await axios.get("https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json");
-        scrips = res.data;
-        scripCache.set('all_scrips', scrips);
+        if (!scripDownloadPromise) {
+            console.log("Downloading Angel One Scrip Master...");
+            scripDownloadPromise = axios.get("https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json")
+                .then(res => {
+                    scripCache.set('all_scrips', res.data);
+                    return res.data;
+                })
+                .finally(() => scripDownloadPromise = null);
+        } else {
+            console.log("Waiting for existing Scrip Master download...");
+        }
+        scrips = await scripDownloadPromise;
     }
 
     // NIFTY Spot Token logic
@@ -126,6 +135,9 @@ const fetchAngelOptionChain = async () => {
         const baseStrike = Math.round(spotPrice / 50) * 50;
         const lowerBound = baseStrike - 350;
         const upperBound = baseStrike + 350;
+        
+        console.log(`[DEBUG] NIFTY Spot: ${spotPrice} | Base Strike: ${baseStrike} | Range: ${lowerBound}-${upperBound}`);
+        console.log(`[DEBUG] Target Expiries: ${parsedDates.slice(0,3).map(d => d.str).join(', ')}`);
 
         let liveData = [];
         let finalTargetTokens = [];
@@ -138,6 +150,7 @@ const fetchAngelOptionChain = async () => {
                 (parseFloat(item.strike) / 100) <= upperBound
             );
 
+            console.log(`[DEBUG] Expiry ${tempTargetExpiry}: Found ${targetTokens.length} tokens within bounds.`);
             if (targetTokens.length === 0) continue;
 
             const chunkArray = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (v, idx) => arr.slice(idx * size, idx * size + size));
@@ -162,14 +175,17 @@ const fetchAngelOptionChain = async () => {
             }
             
             if (combinedFetched.length > 0) {
+                console.log(`[DEBUG] Successfully fetched API data for expiry ${tempTargetExpiry} (${combinedFetched.length} tokens).`);
                 liveData = combinedFetched;
                 finalTargetTokens = targetTokens;
                 break; // Found active live data
+            } else {
+                console.log(`[DEBUG] API returned empty fetched array for expiry ${tempTargetExpiry}.`);
             }
         }
 
         if (liveData.length === 0) {
-           throw new Error("No live market data found for upcoming expiries. Market might be inactive or tokens failed to fetch.");
+           throw new Error(`[CRITICAL] Market Data dropped. Spot: ${spotPrice}. Expiries checked: ${parsedDates.slice(0,3).map(d => d.str).join(', ')}`);
         }
 
         const struct = { records: { underlyingValue: spotPrice, timestamp: new Date().toISOString(), data: [] } };
