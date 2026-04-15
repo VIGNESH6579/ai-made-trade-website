@@ -16,7 +16,7 @@ export default function Home() {
   useEffect(() => {
     const connectWs = () => {
       // Direct WebSocket stream
-      const wsUrl = 'wss://ai-made-trade-website.onrender.com';
+      const wsUrl = 'wss://ai-made-trade-website.onrender.com/ws/market-data';
       wsRef.current = new WebSocket(wsUrl);
 
       wsRef.current.onopen = () => {

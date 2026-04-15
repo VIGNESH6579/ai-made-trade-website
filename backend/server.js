@@ -13,7 +13,7 @@ app.use(express.json());
 
 const port = process.env.PORT || 5000;
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocket.Server({ server, path: '/ws/market-data' });
 
 const cache = new NodeCache({ stdTTL: 0 }); // Fallback cache
 const NTFY_TOPIC = "aimade_trade_nifty50_alerts";
