@@ -98,6 +98,10 @@ const getScripAndConfig = async () => {
         spotPrice = resSpot.data.data.fetched[0].ltp;
     } else {
         console.warn("Failed to fetch Spot Price LTP. Using fallback. API returned:", resSpot.data.message || resSpot.data);
+        if (String(resSpot.data.message || "").includes("Invalid Token")) {
+            console.log("Detecting Midnight Stale Cache. Flushing ScripMaster...");
+            scripCache.del('all_scrips');
+        }
     }
 
     // Filter OPTIDX for NIFTY
@@ -175,6 +179,10 @@ const fetchAngelOptionChain = async () => {
                     combinedFetched = combinedFetched.concat(res.data.data.fetched);
                 } else if (!res.data.status) {
                     console.error("Angel Market Quote API Warning:", res.data.message || res.data);
+                    if (String(res.data.message || "").includes("Invalid Token")) {
+                        console.log("Detecting Midnight Stale Cache. Flushing ScripMaster...");
+                        scripCache.del('all_scrips');
+                    }
                 }
             }
             
