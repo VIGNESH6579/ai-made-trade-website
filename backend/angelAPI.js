@@ -2,6 +2,7 @@ const axios = require('axios');
 const NodeCache = require('node-cache');
 const { authenticator } = require('otplib'); 
 
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const scripCache = new NodeCache({ stdTTL: 43200 }); // 12 hours
 
 let angelAuth = {
@@ -88,6 +89,7 @@ const getScripAndConfig = async () => {
 
     // Get Spot Price from Angel One MarketData API directly
     const spotPayload = { mode: "LTP", exchangeTokens: { "NSE": [String(spotToken)] } };
+    await sleep(1500);
     const resSpot = await axios.post("https://apiconnect.angelbroking.com/rest/secure/angelbroking/market/v1/quote", spotPayload, { headers: getHeaders() });
     
     let spotPrice = 24500; // Better generic fallback
@@ -165,6 +167,7 @@ const fetchAngelOptionChain = async () => {
                 });
 
                 const payload = { mode: "FULL", exchangeTokens: exchangeTokens };
+                await sleep(1500);
                 const res = await axios.post("https://apiconnect.angelbroking.com/rest/secure/angelbroking/market/v1/quote", payload, { headers: getHeaders() });
                 
                 if (res.data.status && res.data.data.fetched && res.data.data.fetched.length > 0) {
