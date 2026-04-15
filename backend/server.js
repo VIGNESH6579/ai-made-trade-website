@@ -65,7 +65,11 @@ const autoPollMarket = async () => {
             const currentAction = processedSignal.signal.action;
             if (currentAction !== lastSignalAction && currentAction !== "HOLD / NEUTRAL") {
                 const message = `🚨 AI SIGNAL ALERT: ${currentAction}\nStrategy: ${processedSignal.signal.strategy}\nTarget: ${processedSignal.signal.target} | SL: ${processedSignal.signal.stopLoss}`;
-                await axios.post(`https://ntfy.sh/${NTFY_TOPIC}`, message, { headers: { 'Title': `NIFTY Alert - ${currentAction}`, 'Priority': 'urgent' }});
+                try {
+                    await axios.post(`https://ntfy.sh/${NTFY_TOPIC}`, message, { headers: { 'Title': `NIFTY Alert - ${currentAction}`, 'Priority': 'urgent' }});
+                } catch (ntfyErr) {
+                    console.error("Failed to push NTFY alert. Rate limited?", ntfyErr.message);
+                }
             }
             lastSignalAction = currentAction;
             
