@@ -78,12 +78,14 @@ const getScripAndConfig = async () => {
     const spotToken = spotScrip ? spotScrip.token : "26000"; // 26000 is default Nifty Index token
 
     // Get Spot Price from Angel One MarketData API directly
-    const spotPayload = { mode: "LTP", exchangeTokens: { "NSE": [spotToken] } };
+    const spotPayload = { mode: "LTP", exchangeTokens: { "NSE": [String(spotToken)] } };
     const resSpot = await axios.post("https://apiconnect.angelbroking.com/rest/secure/angelbroking/market/v1/quote", spotPayload, { headers: getHeaders() });
     
-    let spotPrice = 23750; // Better generic fallback for today
-    if (resSpot.data.status && resSpot.data.data.fetched.length > 0) {
+    let spotPrice = 24500; // Better generic fallback
+    if (resSpot.data.status && resSpot.data.data.fetched && resSpot.data.data.fetched.length > 0) {
         spotPrice = resSpot.data.data.fetched[0].ltp;
+    } else {
+        console.warn("Failed to fetch Spot Price LTP. Using fallback. API returned:", resSpot.data.message || resSpot.data);
     }
 
     // Filter OPTIDX for NIFTY
@@ -122,8 +124,8 @@ const fetchAngelOptionChain = async () => {
         const { spotPrice, parsedDates, niftyOptions } = await getScripAndConfig();
         
         const baseStrike = Math.round(spotPrice / 50) * 50;
-        const lowerBound = baseStrike - 500;
-        const upperBound = baseStrike + 500;
+        const lowerBound = baseStrike - 350;
+        const upperBound = baseStrike + 350;
 
         let liveData = [];
         let finalTargetTokens = [];
@@ -138,17 +140,29 @@ const fetchAngelOptionChain = async () => {
 
             if (targetTokens.length === 0) continue;
 
-            const exchangeTokens = {};
-            targetTokens.forEach(t => {
-                if (!exchangeTokens[t.exch_seg]) exchangeTokens[t.exch_seg] = [];
-                exchangeTokens[t.exch_seg].push(t.token);
-            });
+            const chunkArray = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (v, idx) => arr.slice(idx * size, idx * size + size));
+            const chunks = chunkArray(targetTokens, 15); // Chunking to Max 15 tokens per request to avoid API limits
+            let combinedFetched = [];
 
-            const payload = { mode: "FULL", exchangeTokens: exchangeTokens };
-            const res = await axios.post("https://apiconnect.angelbroking.com/rest/secure/angelbroking/market/v1/quote", payload, { headers: getHeaders() });
+            for (let chunk of chunks) {
+                const exchangeTokens = {};
+                chunk.forEach(t => {
+                    if (!exchangeTokens[t.exch_seg]) exchangeTokens[t.exch_seg] = [];
+                    exchangeTokens[t.exch_seg].push(String(t.token));
+                });
+
+                const payload = { mode: "FULL", exchangeTokens: exchangeTokens };
+                const res = await axios.post("https://apiconnect.angelbroking.com/rest/secure/angelbroking/market/v1/quote", payload, { headers: getHeaders() });
+                
+                if (res.data.status && res.data.data.fetched && res.data.data.fetched.length > 0) {
+                    combinedFetched = combinedFetched.concat(res.data.data.fetched);
+                } else if (!res.data.status) {
+                    console.error("Angel Market Quote API Warning:", res.data.message || res.data);
+                }
+            }
             
-            if (res.data.status && res.data.data.fetched.length > 0) {
-                liveData = res.data.data.fetched;
+            if (combinedFetched.length > 0) {
+                liveData = combinedFetched;
                 finalTargetTokens = targetTokens;
                 break; // Found active live data
             }
