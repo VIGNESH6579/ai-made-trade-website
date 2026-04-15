@@ -62,7 +62,8 @@ const getHeaders = () => ({
     'X-ClientPublicIP': '106.193.147.98',
     'X-MACAddress': '00-B0-D0-63-C2-26',
     'X-PrivateKey': angelAuth.apiKey,
-    'Authorization': `Bearer ${angelAuth.jwtToken}`
+    'Authorization': `Bearer ${angelAuth.jwtToken}`,
+    'Connection': 'close'
 });
 
 let scripDownloadPromise = null;

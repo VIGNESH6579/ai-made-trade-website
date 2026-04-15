@@ -94,9 +94,13 @@ app.get('/api/signals', async (req, res) => {
     return res.status(500).json({ error: "No data available yet. Please try again." });
 });
 
+const autoPollSequence = async () => {
+    await autoPollMarket();
+    setTimeout(autoPollSequence, 10000);
+};
+
 server.listen(port, () => {
     console.log(`Angel One Connected Backend running on port ${port}`);
-    // Fast polling for instant UI reactivity
-    setInterval(autoPollMarket, 10000); 
-    autoPollMarket(); 
+    // Fast polling sequentially to guarantee rate limit adherence
+    autoPollSequence(); 
 });
