@@ -36,7 +36,7 @@ const authenticateAngel = async () => {
             'X-PrivateKey': api_key
         };
 
-        const res = await axios.post('https://apiconnect.angelbroking.com/rest/auth/angelbroking/user/v1/loginByPassword', payload, { headers });
+        const res = await axios.post('https://apiconnect.angelbroking.com/rest/auth/angelbroking/user/v1/loginByPassword', payload, { headers, timeout: 10000 });
         
         if (res.data.status) {
             angelAuth.jwtToken = res.data.data.jwtToken;
@@ -72,7 +72,7 @@ const getScripAndConfig = async () => {
     if (!scrips) {
         if (!scripDownloadPromise) {
             console.log("Downloading Angel One Scrip Master...");
-            scripDownloadPromise = axios.get("https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json")
+                scripDownloadPromise = axios.get("https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json", { timeout: 30000 })
                 .then(res => {
                     scripCache.set('all_scrips', res.data);
                     return res.data;
@@ -91,7 +91,7 @@ const getScripAndConfig = async () => {
     // Get Spot Price from Angel One MarketData API directly
     const spotPayload = { mode: "LTP", exchangeTokens: { "NSE": [String(spotToken)] } };
     await sleep(1500);
-    const resSpot = await axios.post("https://apiconnect.angelbroking.com/rest/secure/angelbroking/market/v1/quote", spotPayload, { headers: getHeaders() });
+    const resSpot = await axios.post("https://apiconnect.angelbroking.com/rest/secure/angelbroking/market/v1/quote", spotPayload, { headers: getHeaders(), timeout: 10000 });
     
     let spotPrice = 24500; // Better generic fallback
     if (resSpot.data.status && resSpot.data.data.fetched && resSpot.data.data.fetched.length > 0) {
@@ -169,7 +169,7 @@ const fetchAngelOptionChain = async () => {
 
                 const payload = { mode: "FULL", exchangeTokens: exchangeTokens };
                 await sleep(1500);
-                const res = await axios.post("https://apiconnect.angelbroking.com/rest/secure/angelbroking/market/v1/quote", payload, { headers: getHeaders() });
+                const res = await axios.post("https://apiconnect.angelbroking.com/rest/secure/angelbroking/market/v1/quote", payload, { headers: getHeaders(), timeout: 10000 });
                 
                 if (res.data.status && res.data.data.fetched && res.data.data.fetched.length > 0) {
                     combinedFetched = combinedFetched.concat(res.data.data.fetched);
